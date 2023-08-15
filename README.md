@@ -15,7 +15,7 @@ When available, I will provide a link here to his repository containing the orig
 To install the Teams Presence Enumeration Tool, you need to have Go installed on your machine. Then, you can clone the repository and build the project.
 
 ```bash
-git clone https://github.com/username/teamsPresenceEnum.git
+git clone https://github.com/AllDayJon/teamsPresenceEnum.git
 cd teamsPresenceEnum
 go build
 ```
