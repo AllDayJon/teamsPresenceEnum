@@ -31,7 +31,7 @@ func processObjectID(objectID string, writer *csv.Writer) {
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.5790.171 Safari/537.36")
-	req.Header.Set("Authorization", "Bearer {token:https://graph.microsoft.com/}") // Replace with actual token
+	req.Header.Set("Authorization", "Bearer {token:https://graph.microsoft.com/}")
 	req.Header.Set("Accept", "*/*")
 
 	client := &http.Client{}
