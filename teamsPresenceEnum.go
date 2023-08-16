@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+var version = "v1.0-preview"
+
 type Presence struct {
 	ID                string `json:"id"`
 	Availability      string `json:"availability"`
@@ -112,6 +114,13 @@ func main() {
 	objectID := flag.String("o", "", "Single object ID")
 	filePath := flag.String("f", "", "File path containing object IDs")
 	exportPath := flag.String("path", "", "Path to export CSV file")
+	versionFlag := flag.Bool("v", false, "Prints the version of the tool")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println("Teams Presence Enumeration Tool, Version:", version)
+		return
+	}
 
 	flag.Parse()
 
