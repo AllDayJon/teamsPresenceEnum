@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 type Presence struct {
@@ -22,39 +24,68 @@ type Presence struct {
 	} `json:"outOfOfficeSettings"`
 }
 
-func processObjectID(objectID string, writer *csv.Writer) {
+var client = &http.Client{}
+
+func createRequest(objectID string) (*http.Request, error) {
 	url := fmt.Sprintf("https://graph.office.net/en-us/graph/api/proxy?url=https%%3A%%2F%%2Fgraph.microsoft.com%%2Fbeta%%2Fusers%%2F%s%%2Fpresence", objectID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.5790.171 Safari/537.36")
 	req.Header.Set("Authorization", "Bearer {token:https://graph.microsoft.com/}") // Replace with actual token
 	req.Header.Set("Accept", "*/*")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	return req, nil
+}
+
+const (
+	maxRetries  = 3
+	baseDelayMs = 500 // 500 milliseconds
+)
+
+func processObjectID(objectID string, writer *csv.Writer) {
+	var (
+		resp *http.Response
+		err  error
+	)
+
+	req, err := createRequest(objectID)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error creating request for object ID %s: %s\n", objectID, err)
+		return
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			log.Fatal(err)
+
+	for i := 0; i <= maxRetries; i++ {
+		resp, err = client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
 		}
-	}(resp.Body)
+		if i < maxRetries {
+			delay := time.Duration(baseDelayMs*math.Pow(2, float64(i))) * time.Millisecond
+			time.Sleep(delay)
+		}
+	}
+
+	if err != nil {
+		log.Printf("Error making request for object ID %s after %d retries: %s\n", objectID, maxRetries, err)
+		return
+	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error reading response for object ID %s: %s\n", objectID, err)
+		return
 	}
 
 	var presence Presence
 	err = json.Unmarshal(body, &presence)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error unmarshalling response for object ID %s: %s\n", objectID, err)
+		return
 	}
 
 	fmt.Printf("%-40s %-15s %-15s %-5v\n", presence.ID, presence.Availability, presence.Activity, presence.OutOfOfficeStatus.IsOutOfOffice)
@@ -62,7 +93,7 @@ func processObjectID(objectID string, writer *csv.Writer) {
 	if writer != nil {
 		err = writer.Write([]string{presence.ID, presence.Availability, presence.Activity, fmt.Sprintf("%v", presence.OutOfOfficeStatus.IsOutOfOffice)})
 		if err != nil {
-			log.Fatalf("failed to write CSV row: %s", err)
+			log.Printf("Failed to write CSV row for object ID %s: %s\n", objectID, err)
 		}
 	}
 }
@@ -84,29 +115,28 @@ func main() {
 
 	flag.Parse()
 
+	if *objectID == "" && *filePath == "" {
+		fmt.Println("Please provide either a single object ID (-o) or a file path (-f)")
+		return
+	}
+
 	var writer *csv.Writer
 	if *exportPath != "" {
 		file, err := os.Create(*exportPath)
 		if err != nil {
-			log.Fatalf("failed to create file: %s", err)
+			log.Fatalf("Failed to create file: %s", err)
 		}
-		defer func(file *os.File) {
-			err := file.Close()
-			if err != nil {
-				log.Fatal(err)
-			}
-		}(file)
+		defer file.Close()
 
 		writer = csv.NewWriter(file)
 		defer writer.Flush()
 
 		err = writer.Write([]string{"Object ID", "Availability", "Activity", "Out of Office"})
 		if err != nil {
-			log.Fatalf("failed to write CSV header: %s", err)
+			log.Fatalf("Failed to write CSV header: %s", err)
 		}
 	}
 
-	// Print the headers here
 	fmt.Printf("%-40s %-15s %-15s %-5s\n", "Object ID", "Availability", "Activity", "Out of Office")
 
 	if *objectID != "" {
@@ -116,12 +146,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer func(file *os.File) {
-			err := file.Close()
-			if err != nil {
-				log.Fatal(err)
-			}
-		}(file)
+		defer file.Close()
 
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
@@ -133,7 +158,5 @@ func main() {
 		if err := scanner.Err(); err != nil {
 			log.Fatal(err)
 		}
-	} else {
-		fmt.Println("Please provide either a single object ID (-o) or a file path (-f)")
 	}
 }
